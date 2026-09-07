@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Amazon Tracker Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Amazon Tracker Settings</h1>
+
+    <div class="section">
+      <h2>General Settings</h2>
+      <div class="input-group" id="min-open-time-group">
+        <label for="min-open-time">Min page open time (seconds)</label>
+        <input type="number" id="min-open-time" class="webhook-input" min="0" step="0.1" placeholder="1.0">
+      </div>
+      <div class="input-group" id="max-open-time-group">
+        <label for="max-open-time">Max page open time (seconds)</label>
+        <input type="number" id="max-open-time" class="webhook-input" min="0" step="0.1" placeholder="3.0">
+      </div>
+      <div class="toggle-group" id="close-tabs-group">
+        <label>Close workflow tabs after sending</label>
+        <label class="switch">
+          <input type="checkbox" id="close-tabs-switch">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Get new orders settings</h2>
+      <div class="input-group">
+        <label for="amazon-webhook">Send-results Webhook URL</label>
+        <input type="text" id="amazon-webhook" class="webhook-input" placeholder="https://example.com/webhook/new-orders">
+      </div>
+      <div class="input-group">
+        <label for="amazon-page-count">Order pages</label>
+        <input type="number" id="amazon-page-count" class="webhook-input" min="1" max="1000" step="1" value="1">
+      </div>
+      <div class="button-style-row">
+        <div class="input-group button-name-group">
+          <label for="amazon-button-label">Button name</label>
+          <input type="text" id="amazon-button-label" class="webhook-input" maxlength="40" placeholder="Get new orders">
+        </div>
+        <div class="input-group color-group">
+          <label for="amazon-button-color">Color</label>
+          <input type="color" id="amazon-button-color" value="#f59e0b">
+        </div>
+      </div>
+
+      <div class="merged-settings-block">
+        <div class="toggle-group">
+          <div>
+            <label>Launch automatically</label>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="amazon-schedule-switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="amazon-schedule-settings" class="custom-schedule-block"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Check Order Delivery status settings</h2>
+      <div class="button-style-row">
+        <div class="input-group button-name-group">
+          <label for="general-button-label">Button name</label>
+          <input type="text" id="general-button-label" class="webhook-input" maxlength="40" placeholder="Run general workflow">
+        </div>
+        <div class="input-group color-group">
+          <label for="general-button-color">Color</label>
+          <input type="color" id="general-button-color" value="#2563eb">
+        </div>
+      </div>
+
+      <div class="toggle-group" style="margin-bottom: 15px;">
+        <label>Fetch link list for general workflow</label>
+        <label class="switch">
+          <input type="checkbox" id="fetch-switch">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="input-group" id="fetch-url-group">
+        <label for="fetch-url">Fetching URL</label>
+        <input type="text" id="fetch-url" class="webhook-input" placeholder="https://example.com/api/links">
+      </div>
+      <div class="input-group">
+        <label for="general-max-links">Max links to open (0 or empty for unlimited)</label>
+        <input type="number" id="general-max-links" class="webhook-input" min="0" step="1" placeholder="Unlimited">
+      </div>
+      <div class="input-group">
+        <label for="live-webhook">Send-results Webhook URL</label>
+        <input type="text" id="live-webhook" class="webhook-input">
+      </div>
+
+      <div class="merged-settings-block">
+        <div class="toggle-group">
+          <label>Launch automatically</label>
+          <label class="switch">
+            <input type="checkbox" id="auto-launch-switch">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div id="auto-launch-settings" class="nested-settings">
+          <div class="input-group">
+            <label for="auto-launch-interval">Launch every (minutes)</label>
+            <input type="number" id="auto-launch-interval" class="webhook-input" min="0.5" step="0.5" value="15">
+          </div>
+
+          <div class="toggle-group">
+            <label>Restrict to days and times</label>
+            <label class="switch">
+              <input type="checkbox" id="schedule-switch">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="schedule-settings" class="nested-settings">
+            <div class="input-group">
+              <label>Allowed days</label>
+              <div class="day-picker">
+                <label><input type="checkbox" name="schedule-day" value="1"> Mon</label>
+                <label><input type="checkbox" name="schedule-day" value="2"> Tue</label>
+                <label><input type="checkbox" name="schedule-day" value="3"> Wed</label>
+                <label><input type="checkbox" name="schedule-day" value="4"> Thu</label>
+                <label><input type="checkbox" name="schedule-day" value="5"> Fri</label>
+                <label><input type="checkbox" name="schedule-day" value="6"> Sat</label>
+                <label><input type="checkbox" name="schedule-day" value="0"> Sun</label>
+              </div>
+            </div>
+            <div class="time-row">
+              <div class="input-group">
+                <label for="schedule-start">Start time</label>
+                <input type="time" id="schedule-start" class="webhook-input" value="09:00">
+              </div>
+              <div class="input-group">
+                <label for="schedule-stop">Stop time</label>
+                <input type="time" id="schedule-stop" class="webhook-input" value="17:00">
+              </div>
+            </div>
+            <p class="help-text">Uses your browser's local time. Equal start and stop times mean all day.</p>
+          </div>
+
+          <div class="toggle-group">
+            <label>Require PC to be idle</label>
+            <label class="switch">
+              <input type="checkbox" id="idle-switch">
+              <span class="slider"></span>
+            </label>
+          </div>
+          <div id="idle-settings" class="nested-settings">
+            <div class="input-group">
+              <label for="idle-minutes">Idle for at least (minutes)</label>
+              <input type="number" id="idle-minutes" class="webhook-input" min="0.25" step="0.25" value="10">
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Additional Workflows</h2>
+      <div id="custom-workflows"></div>
+    </div>
+
+    <div class="section">
+      <h2>Keyboard Shortcuts</h2>
+      <div id="shortcut-list" class="shortcut-list" aria-live="polite"></div>
+      <button id="open-shortcut-settings" class="shortcut-settings-button" type="button">Open Chrome shortcut settings</button>
+    </div>
+
+    <div id="status-message"></div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

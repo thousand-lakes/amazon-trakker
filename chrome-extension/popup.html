@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amazon Tracker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <img src="icons/icon-48.png" width="48" height="48" alt="">
+      <div>
+        <span class="eyebrow">ORDER AUTOMATION</span>
+        <h1>Amazon Tracker</h1>
+      </div>
+      <button id="open-options" class="settings" type="button" aria-label="Settings" title="Settings">⚙</button>
+    </header>
+
+    <section class="amazon-card">
+      <div class="workflow-action-row">
+        <button id="amazon-run" class="primary" type="button" disabled>
+          <span id="amazon-button-text">Track Amazon orders</span>
+        </button>
+        <input id="amazon-page-limit" class="workflow-limit amazon-limit" type="number" min="1" max="1000" step="1" value="1" aria-label="Amazon order pages" title="Amazon order pages">
+      </div>
+    </section>
+
+    <div class="divider" aria-hidden="true"></div>
+    <div class="workflow-action-row">
+      <button id="general-run" class="general" type="button" disabled>Run general workflow</button>
+      <input id="general-link-limit" class="workflow-limit general-limit" type="number" min="0" step="1" placeholder="∞" aria-label="General maximum links; empty or zero means unlimited" title="General max links (0 or empty for unlimited)">
+    </div>
+
+    <section id="custom-workflow-section" class="custom-workflows" hidden>
+      <div class="divider" aria-hidden="true"></div>
+      <div id="custom-workflow-actions"></div>
+    </section>
+
+    <div class="footer-actions">
+      <button id="stop-run" class="stop" type="button" disabled>
+        <span class="stop-icon" aria-hidden="true"></span>
+        <span id="stop-label">Stop</span>
+      </button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

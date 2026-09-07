@@ -1,0 +1,355 @@
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(255, 178, 54, 0.2), transparent 32%),
+    #f3f5f8;
+  color: #172033;
+  margin: 0;
+  padding: 20px;
+}
+
+.container {
+  max-width: 600px;
+  margin: 0 auto;
+  background-color: #fff;
+  padding: 30px;
+  border: 1px solid rgba(30, 45, 68, 0.08);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(30, 45, 68, 0.1);
+}
+
+h1 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.section {
+  margin-bottom: 30px;
+  padding: 20px;
+  border: 1px solid #e6eaf0;
+  border-radius: 14px;
+  background: #fbfcfd;
+}
+
+h2 {
+  font-size: 18px;
+  margin-bottom: 15px;
+}
+
+.merged-settings-block {
+  margin-top: 5px;
+  padding-top: 18px;
+  border-top: 1px solid #e3e8ef;
+}
+
+.settings-subheading {
+  margin: 0 0 15px;
+  font-size: 15px;
+}
+
+.input-group {
+  margin-bottom: 15px;
+}
+
+.input-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.webhook-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 9px;
+  font-size: 14px;
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.webhook-input:focus {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.toggle-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nested-settings {
+  margin: 15px 0 0 18px;
+  padding-left: 18px;
+  border-left: 2px solid #e5e7eb;
+}
+
+.time-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 15px;
+}
+
+.schedule-time-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 15px;
+}
+
+select.webhook-input {
+  cursor: pointer;
+}
+
+.day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.day-picker label {
+  padding: 7px 9px;
+  border: 1px solid #d5d9de;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.help-text {
+  margin: -5px 0 15px;
+  color: #687078;
+  font-size: 12px;
+}
+
+.field-help {
+  margin: 7px 0 0;
+}
+
+.section-help {
+  margin: -5px 0 18px;
+  line-height: 1.5;
+}
+
+.button-style-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.button-name-group {
+  flex: 1;
+}
+
+.color-group {
+  flex: 0 0 72px;
+}
+
+.color-group input[type="color"] {
+  box-sizing: border-box;
+  width: 72px;
+  height: 41px;
+  padding: 4px;
+  border: 1px solid #ccd2da;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.color-group input[type="color"]:focus-visible {
+  outline: none;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.15);
+}
+
+.custom-workflow-card {
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid #dfe5ec;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.custom-workflow-card:first-child {
+  margin-top: 0;
+}
+
+.custom-workflow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+}
+
+.custom-workflow-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.custom-workflow-body {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #edf0f4;
+}
+
+.custom-schedule-block {
+  margin-top: 4px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #f6f8fb;
+}
+
+.schedule-rule {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e3e8ef;
+}
+
+.schedule-rule:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.schedule-rule-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.rule-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 105px;
+  gap: 12px;
+  align-items: end;
+}
+
+.rule-layout .input-group {
+  margin-bottom: 0;
+}
+
+.compact-day-picker {
+  gap: 5px;
+}
+
+.compact-day-picker label {
+  padding: 5px 7px;
+  font-size: 11px;
+}
+
+.shortcut-list {
+  margin-bottom: 16px;
+  border: 1px solid #dfe5ec;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-top: 1px solid #edf0f4;
+  font-size: 14px;
+}
+
+.shortcut-row:first-child {
+  border-top: 0;
+}
+
+.shortcut-row kbd {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border: 1px solid #ccd2da;
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #172033;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.shortcut-row kbd.unassigned {
+  color: #7b8491;
+}
+
+.shortcut-settings-button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.shortcut-settings-button:hover {
+  background: #1d4ed8;
+}
+
+.shortcut-settings-button:focus-visible {
+  outline: 2px solid #f59e0b;
+  outline-offset: 2px;
+}
+
+/* The switch - https://www.w3schools.com/howto/howto_css_switch.asp */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 34px;
+}
+
+.switch input { 
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 34px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 26px;
+  width: 26px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+
+#status-message {
+  margin-top: 20px;
+  font-size: 14px;
+  color: green;
+  text-align: center;
+  height: 20px;
+}

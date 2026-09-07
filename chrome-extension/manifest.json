@@ -1,0 +1,64 @@
+{
+  "manifest_version": 3,
+  "name": "Amazon Tracker",
+  "short_name": "Amazon Tracker",
+  "version": "1.7.0",
+  "description": "Track Amazon orders and send structured page data to your webhooks.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "idle"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Amazon Tracker",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "commands": {
+    "save-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Run general workflow"
+    },
+    "run-amazon-workflow": {
+      "description": "Run Amazon workflow"
+    },
+    "stop-active-workflow": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+X",
+        "mac": "Command+Shift+X"
+      },
+      "description": "Stop the active workflow after its current page"
+    },
+    "run-custom-workflow-1": {
+      "description": "Run additional workflow 1"
+    },
+    "run-custom-workflow-2": {
+      "description": "Run additional workflow 2"
+    },
+    "run-custom-workflow-3": {
+      "description": "Run additional workflow 3"
+    }
+  }
+}
