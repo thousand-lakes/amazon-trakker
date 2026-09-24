@@ -8,10 +8,15 @@ function handleGetShipped(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Read limit parameter from URL (defaults to 100 if omitted)
-    const limit = (e && e.parameter && e.parameter.limit) 
-      ? parseInt(e.parameter.limit, 10) 
-      : 100;
+    // Read the requested limit, defaulting to 1,000 and enforcing the same
+    // value as a server-side safety ceiling.
+    const maxLimit = 1000;
+    const requestedLimit = (e && e.parameter && e.parameter.limit)
+      ? parseInt(e.parameter.limit, 10)
+      : maxLimit;
+    const limit = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, maxLimit)
+      : maxLimit;
 
     // Real last row based strictly on Column B (Order #)
     const colBValues = sheet.getRange("B:B").getValues();

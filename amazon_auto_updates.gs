@@ -35,7 +35,7 @@ function syncAmazonStatuses() {
 
       // Rule evaluation
       if (estLower.startsWith("delivered")) {
-        if (currentStatus !== "Delivered") {
+        if (currentStatus !== "Delivered" && currentStatus !== "") {
           targetStatus = "Delivered";
           historyTag = "Aut|Delivered";
         }

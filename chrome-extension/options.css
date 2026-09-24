@@ -221,13 +221,17 @@ select.webhook-input {
 
 .rule-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 105px;
+  grid-template-columns: minmax(0, 1fr) minmax(155px, 175px);
   gap: 12px;
   align-items: end;
 }
 
 .rule-layout .input-group {
   margin-bottom: 0;
+}
+
+.rule-layout input[type="time"] {
+  min-width: 155px;
 }
 
 .compact-day-picker {
@@ -237,6 +241,17 @@ select.webhook-input {
 .compact-day-picker label {
   padding: 5px 7px;
   font-size: 11px;
+}
+
+@media (max-width: 560px) {
+  .rule-layout {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+
+  .rule-layout input[type="time"] {
+    width: min(100%, 175px);
+  }
 }
 
 .shortcut-list {

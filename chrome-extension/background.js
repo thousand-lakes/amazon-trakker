@@ -10,12 +10,19 @@ try {
   console.warn('Failed to import amazon-tracking.js:', e);
 }
 
+try {
+  importScripts('preset-settings.js');
+} catch (e) {
+  console.warn('Failed to import preset-settings.js:', e);
+}
+
 const AUTO_LAUNCH_ALARM = 'auto-launch';
 const AMAZON_ALARM_PREFIX = 'amazon-daily-';
 const CUSTOM_ALARM_PREFIX = 'custom-schedule-';
 const DEFAULT_AMAZON_SCHEDULE_TIMES = ['09:00', '12:00', '15:00', '18:00', '21:00', '23:00'];
 const LOCAL_STORAGE_MIGRATION_KEY = 'localStorageMigrationComplete';
 const WORKFLOW_LIMITS_MIGRATION_KEY = 'workflowLimitsMigrationComplete';
+const PRESET_SETTINGS_INITIALIZED_KEY = 'presetSettingsInitializedV1';
 const BROWSER_SESSION_KEY = 'workflowSchedulerSessionInitialized';
 const SESSION_QUEUE_KEY = 'pendingWorkflowRuns';
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -63,12 +70,18 @@ function isAmazonTrackingPage(url) {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
     const isAmazon = host === 'www.amazon.com' || host === 'amazon.com';
-    return isAmazon && parsed.pathname.startsWith('/gp/your-account/ship-track');
+    return isAmazon && (
+      parsed.pathname.startsWith('/gp/your-account/ship-track') ||
+      parsed.pathname.startsWith('/progress-tracker/package')
+    );
   } catch (e) {
     return (
       url.startsWith('https://www.amazon.com/gp/your-account/ship-track') ||
       url.startsWith('http://www.amazon.com/gp/your-account/ship-track') ||
-      url.startsWith('https://amazon.com/gp/your-account/ship-track')
+      url.startsWith('https://amazon.com/gp/your-account/ship-track') ||
+      url.startsWith('https://www.amazon.com/progress-tracker/package') ||
+      url.startsWith('http://www.amazon.com/progress-tracker/package') ||
+      url.startsWith('https://amazon.com/progress-tracker/package')
     );
   }
 }
@@ -100,6 +113,7 @@ const initializationPromise = initializeExtension();
 
 async function initializeExtension() {
   await migrateSyncedSettingsToLocal();
+  await seedPresetSettings();
   await migrateSharedWorkflowLimit();
   await chrome.storage.local.remove('sendAll');
   const sessionState = await chrome.storage.session.get({
@@ -121,6 +135,27 @@ async function initializeExtension() {
     pendingRuns.sort((a, b) => workflowPriority(b) - workflowPriority(a) || a.sequence - b.sequence);
     scheduleQueueDrain();
   }
+}
+
+async function seedPresetSettings() {
+  const preset = globalThis.AMAZON_TRACKER_PRESET_SETTINGS;
+  if (!preset || typeof preset !== 'object') return;
+
+  const existingSettings = await chrome.storage.local.get(null);
+  if (existingSettings[PRESET_SETTINGS_INITIALIZED_KEY]) return;
+
+  const missingSettings = {};
+  for (const [key, value] of Object.entries(preset)) {
+    if (!Object.prototype.hasOwnProperty.call(existingSettings, key)) {
+      missingSettings[key] = value;
+    }
+  }
+
+  await chrome.storage.local.set({
+    ...missingSettings,
+    [PRESET_SETTINGS_INITIALIZED_KEY]: true
+  });
+  console.log(`Initialized ${Object.keys(missingSettings).length} setting(s) from the packaged preset.`);
 }
 
 function normalizeLinkLimit(value) {
@@ -983,7 +1018,16 @@ function extractLinksFromResponse(responseText) {
 }
 
 async function processAndSendTab(tabId, url, webhookUrl) {
-  if (isAmazonTrackingPage(url)) {
+  // Amazon may redirect the saved legacy ship-track URL to the newer
+  // progress-tracker route. Classify using either URL while retaining the
+  // original URL in the webhook payload so it still matches the sheet row.
+  let loadedUrl = url;
+  try {
+    const loadedTab = await chrome.tabs.get(tabId);
+    if (loadedTab && loadedTab.url) loadedUrl = loadedTab.url;
+  } catch (_) { }
+
+  if (isAmazonTrackingPage(url) || isAmazonTrackingPage(loadedUrl)) {
     console.log(`Detected Amazon tracking page: ${url}. Parsing tracking details...`);
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tabId },

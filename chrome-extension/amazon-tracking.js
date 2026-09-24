@@ -1,5 +1,6 @@
 /**
- * Parses Amazon tracking pages (https://www.amazon.com/gp/your-account/ship-track*)
+ * Parses Amazon tracking pages (/gp/your-account/ship-track* and
+ * /progress-tracker/package*).
  * Supports multiple layouts (with and without milestone timelines).
  */
 function parseAmazonTrackingPage() {
@@ -79,6 +80,14 @@ function parseAmazonTrackingPage() {
     if (!packageStatus && pageState && pageState.promise) {
         packageStatus = cleanText(pageState.promise.promiseMessage);
     }
+    if (!packageStatus && document.body) {
+        // Keep this fallback deliberately narrow so navigation and order-history
+        // dates are not mistaken for the package promise.
+        const match = cleanText(document.body.textContent).match(
+            /\b(?:Arriv(?:es|ing)|Expected|Deliver(?:ed|y)|Out for delivery)\s+(?:by\s+)?(?:today|tomorrow|(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)(?:,)?\s+)?(?:[A-Z][a-z]+\s+\d{1,2}(?:\s*-\s*[A-Z][a-z]+\s+\d{1,2})?)\b/i
+        );
+        if (match) packageStatus = cleanText(match[0]);
+    }
 
     // 3. Tracking ID (empty string if unavailable)
     let trackingId = '';
@@ -104,6 +113,12 @@ function parseAmazonTrackingPage() {
 
     if (!trackingId && pageState && pageState.trackingId) {
         trackingId = cleanText(String(pageState.trackingId));
+    }
+    if (!trackingId && document.body) {
+        const match = cleanText(document.body.textContent).match(
+            /\bTracking\s*(?:ID|Number|#)?\s*:\s*([A-Z0-9][A-Z0-9-]{7,})\b/i
+        );
+        if (match) trackingId = match[1];
     }
 
     // 4. Order Status if timeline available: strongly one of 'Ordered', 'Shipped', 'Out for delivery', 'Delivered'
@@ -131,6 +146,11 @@ function parseAmazonTrackingPage() {
         else if (/Out for delivery/i.test(lastReachedMilestone)) orderStatus = 'Out for delivery';
         else if (/Shipped/i.test(lastReachedMilestone)) orderStatus = 'Shipped';
         else if (/Ordered/i.test(lastReachedMilestone)) orderStatus = 'Ordered';
+    }
+    if (!orderStatus) {
+        if (/\bDelivered\b/i.test(packageStatus)) orderStatus = 'Delivered';
+        else if (/\bOut for delivery\b/i.test(packageStatus)) orderStatus = 'Out for delivery';
+        else if (/\bShipped\b/i.test(packageStatus)) orderStatus = 'Shipped';
     }
 
     // 5. Array of product links
