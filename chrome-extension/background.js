@@ -54,12 +54,18 @@ function isAmazonOrdersPage(url) {
     const parsed = new URL(url);
     const host = parsed.hostname.toLowerCase();
     const isAmazon = host === 'www.amazon.com' || host === 'amazon.com';
-    return isAmazon && parsed.pathname.startsWith('/your-orders/orders');
+    return isAmazon && (
+      parsed.pathname.startsWith('/your-orders/orders') ||
+      parsed.pathname.startsWith('/gp/css/order-history')
+    );
   } catch (e) {
     return (
       url.startsWith('https://www.amazon.com/your-orders/orders') ||
       url.startsWith('http://www.amazon.com/your-orders/orders') ||
-      url.startsWith('https://amazon.com/your-orders/orders')
+      url.startsWith('https://amazon.com/your-orders/orders') ||
+      url.startsWith('https://www.amazon.com/gp/css/order-history') ||
+      url.startsWith('http://www.amazon.com/gp/css/order-history') ||
+      url.startsWith('https://amazon.com/gp/css/order-history')
     );
   }
 }
@@ -1058,8 +1064,12 @@ async function processAndSendTab(tabId, url, webhookUrl) {
     return;
   }
 
-  if (isAmazonOrdersPage(url)) {
-    console.log(`Detected Amazon orders page: ${url}. Parsing structured orders...`);
+  // Amazon's account navigation can enter through the legacy
+  // /gp/css/order-history route and redirect to /your-orders/orders (or the
+  // other way around during experiments). Check both the requested and final
+  // URL so either route receives the structured order parser.
+  if (isAmazonOrdersPage(url) || isAmazonOrdersPage(loadedUrl)) {
+    console.log(`Detected Amazon orders page: ${loadedUrl}. Parsing structured orders...`);
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: parseAmazonOrders

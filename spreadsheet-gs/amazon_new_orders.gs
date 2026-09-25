@@ -38,7 +38,7 @@ function handleAmazonNewOrders(e) {
       }
     }
 
-    // Flip order array so oldest orders on the page get written first
+    // Process oldest orders on the page first
     ordersList.reverse();
 
     const sheet = ss.getSheetByName("Amazon");
@@ -48,20 +48,25 @@ function handleAmazonNewOrders(e) {
         .setMimeType(ContentService.MimeType.JSON);
     }
 
-    // Calculate last occupied row based strictly on Column B (Order #)
-    const colBValues = sheet.getRange("B:B").getValues();
-    let lastRow = 1;
-    for (let i = colBValues.length - 1; i >= 0; i--) {
-      if (colBValues[i][0] && String(colBValues[i][0]).trim() !== "") {
-        lastRow = i + 1;
-        break;
+    // --- ACCURATE LAST ROW FINDER (Based on Column B) ---
+    const sheetLastRow = sheet.getLastRow();
+    let lastRow = 1; // Default to row 1 (headers)
+
+    if (sheetLastRow > 1) {
+      const colBValues = sheet.getRange(1, 2, sheetLastRow, 1).getValues();
+      for (let i = colBValues.length - 1; i >= 0; i--) {
+        if (colBValues[i][0] && String(colBValues[i][0]).trim() !== "") {
+          lastRow = i + 1; // Real last row with Order #
+          break;
+        }
       }
     }
 
-    // Fetch existing Order #s in Column B for deduplication
+    // Read existing Order #s strictly up to lastRow for deduplication
     const existingOrders = new Set();
     if (lastRow > 1) {
-      colBValues.slice(1, lastRow).forEach(row => {
+      const colBValues = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
+      colBValues.forEach(row => {
         if (row[0]) existingOrders.add(String(row[0]).trim());
       });
     }
@@ -75,11 +80,19 @@ function handleAmazonNewOrders(e) {
     const skippedOrders = [];
     const newOrders = [];
 
+    // Clean strings for Google Sheets formula literals
+    const cleanStr = (str) => {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/[\r\n\t]+/g, " ") // Strip newlines/tabs that break formulas
+        .replace(/"/g, '""')        // Escape double quotes for Sheets syntax
+        .trim();
+    };
+
     ordersList.forEach(order => {
       const orderNum = String(order.number || "").trim();
       if (!orderNum) return;
 
-      // 1. Deduplication check against Column B
       if (existingOrders.has(orderNum)) {
         skippedOrders.push(orderNum);
         return;
@@ -88,27 +101,38 @@ function handleAmazonNewOrders(e) {
       newOrders.push(orderNum);
 
       const orderDate = order.date ? order.date : ""; 
-      const orderDetailsLink = order.orderDetailsLink || "";
+      const orderDetailsLink = (order.orderDetailsLink || "").trim();
       const packages = order.packages || [];
 
       packages.forEach(pkg => {
         const pkgId = pkg.id || "";
         const estDelivery = pkg.estDeliveryDate || "";
-        const trackingLink = pkg.trackingLink || "";
+        const trackingLink = (pkg.trackingLink || "").trim();
         const items = pkg.items || [];
 
         items.forEach(item => {
           const rawName = item.name || "Product";
-          const cleanName = String(rawName).replace(/"/g, ''); 
-          const prodLink = item.productLink || "";
-          const imgUrl = item.image || "";
+          const prodLink = (item.productLink || "").trim();
+          const imgUrl = (item.image || "").trim();
           const qty = item.quantity || 1;
 
-          // Form Formula Strings
-          const orderDetailsVal = orderDetailsLink ? `=HYPERLINK("${orderDetailsLink}", "${orderNum}")` : orderNum;
-          const itemNameVal = prodLink ? `=HYPERLINK("${prodLink}", "${cleanName}")` : cleanName;
-          const imgVal = imgUrl ? `=IMAGE("${imgUrl}")` : "";
-          const trackingVal = trackingLink ? `=HYPERLINK("${trackingLink}", "tracking page")` : "";
+          // Apps Script setValues ALWAYS requires standard commas (,) in formulas
+          const orderDetailsVal = orderDetailsLink 
+            ? `=HYPERLINK("${cleanStr(orderDetailsLink)}", "${cleanStr(orderNum)}")` 
+            : orderNum;
+
+          const itemNameVal = prodLink 
+            ? `=HYPERLINK("${cleanStr(prodLink)}", "${cleanStr(rawName)}")` 
+            : cleanStr(rawName);
+
+          const imgVal = imgUrl 
+            ? `=IMAGE("${cleanStr(imgUrl)}")` 
+            : "";
+
+          const trackingVal = trackingLink 
+            ? `=HYPERLINK("${cleanStr(trackingLink)}", "tracking page")` 
+            : "";
+
           const historyVal = `${historyTimestamp} New|${estDelivery}`;
 
           rowsToInsert.push([
@@ -140,14 +164,24 @@ function handleAmazonNewOrders(e) {
       const requiredRows = lastRow + rowsToInsert.length;
 
       if (requiredRows > maxRows) {
-        sheet.insertRowsAfter(maxRows, Math.max(requiredRows - maxRows, 500));
+        sheet.insertRowsAfter(maxRows, requiredRows - maxRows);
       }
 
+      // Write directly below the last populated row in Column B
       const targetRange = sheet.getRange(lastRow + 1, 1, rowsToInsert.length, rowsToInsert[0].length);
       targetRange.setValues(rowsToInsert);
     }
 
-    logExecution(logSheet, startTime, "amazon_orders", ordersList.length, newOrders.length, skippedOrders, rowsToInsert.length, rowsToInsert.length > 0 ? "Success" : "Skipped (duplicates)");
+    logExecution(
+      logSheet, 
+      startTime, 
+      "amazon_orders", 
+      ordersList.length, 
+      newOrders.length, 
+      skippedOrders, 
+      rowsToInsert.length, 
+      rowsToInsert.length > 0 ? "Success" : "Skipped (duplicates)"
+    );
 
     return ContentService.createTextOutput(JSON.stringify({ 
       status: "success", 

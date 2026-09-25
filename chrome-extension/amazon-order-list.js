@@ -9,7 +9,6 @@ function parseAmazonOrders() {
         return (value || '').replace(/\s+/g, ' ').trim();
     }
 
-    // Amazon has used all of these labels in different versions of the orders page.
     const orderDateLabelPattern = '(?:Order\\s+placed|Order\\s+date|Placed\\s+on|Ordered\\s+on|Ordered)';
     const dateValuePattern = '(?:[A-Za-z]+\\s+\\d{1,2},\\s+\\d{4}|\\d{1,2}\\s+[A-Za-z]+\\s+\\d{4})';
 
@@ -22,7 +21,6 @@ function parseAmazonOrders() {
         return match ? match[1].trim() : null;
     }
 
-    // Helper to resolve absolute URLs
     function toAbsoluteUrl(href) {
         if (!href) return null;
         try {
@@ -32,22 +30,44 @@ function parseAmazonOrders() {
         }
     }
 
-    // Select all order cards on the page (supports various Amazon DOM versions)
+    // Helper to extract highest-res image URL from Amazon img nodes
+    function getBestImageUrl(imgNode) {
+        if (!imgNode) return null;
+        
+        // 1. Explicit high-res attribute
+        const hires = imgNode.getAttribute('data-a-hires');
+        if (hires) return hires;
+
+        // 2. Parse data-a-dynamic-image JSON if available
+        const dynamicImgAttr = imgNode.getAttribute('data-a-dynamic-image');
+        if (dynamicImgAttr) {
+            try {
+                const parsed = JSON.parse(dynamicImgAttr);
+                const urls = Object.keys(parsed);
+                if (urls.length > 0) {
+                    // Pick the URL with the largest width
+                    urls.sort((a, b) => (parsed[b][0] || 0) - (parsed[a][0] || 0));
+                    return urls[0];
+                }
+            } catch (_) {}
+        }
+
+        // 3. Fallback to src
+        return imgNode.getAttribute('src');
+    }
+
     const orderCards = document.querySelectorAll('.order-card, .order, .js-order-card, [id^="orderCard"], .your-orders-card');
 
     orderCards.forEach(card => {
         // --- 1. ORDER LEVEL DATA ---
-        // Extract order number (must match Amazon order number pattern \d{3}-\d{7}-\d{7})
         let orderNumber = null;
 
-        // 1. Check data-csa-c-slot-id attribute (e.g. amzn1.yourorders.order-card.113-9267098-9983451)
         const slotId = card.getAttribute('data-csa-c-slot-id') || '';
         const slotMatch = slotId.match(/\b\d{3}-\d{7}-\d{7}\b/);
         if (slotMatch) {
             orderNumber = slotMatch[0];
         }
 
-        // 2. Check dedicated order ID container
         if (!orderNumber) {
             const orderIdContainer = card.querySelector('.yohtmlc-order-id, .yohtmlc-order-number');
             if (orderIdContainer) {
@@ -57,7 +77,6 @@ function parseAmazonOrders() {
             }
         }
 
-        // 3. Check order details links
         if (!orderNumber) {
             const detailsLinkNode = card.querySelector('a[href*="orderID="], a[href*="orderId="]');
             if (detailsLinkNode) {
@@ -67,16 +86,13 @@ function parseAmazonOrders() {
             }
         }
 
-        // 4. Fallback search across card text
         if (!orderNumber && card.textContent) {
             const match = card.textContent.match(/\b\d{3}-\d{7}-\d{7}\b/);
             if (match) orderNumber = match[0];
         }
 
-        // Skip invalid/empty cards without a recognized order number
         if (!orderNumber) return;
 
-        // Extract order date
         let orderDate = null;
         const dateContainer = card.querySelector('.yohtmlc-order-date, [data-order-date]');
         if (dateContainer) {
@@ -89,8 +105,6 @@ function parseAmazonOrders() {
         if (!orderDate) {
             const orderHeader = card.querySelector('.order-header, .yohtmlc-order-header, [data-component="order-header"]');
             if (orderHeader) {
-                // Reading the complete header handles layouts where the label and value
-                // are in sibling elements instead of two `.a-row` elements.
                 orderDate = findDate(orderHeader.textContent, true) ||
                             findDate(orderHeader.textContent, false);
 
@@ -108,7 +122,6 @@ function parseAmazonOrders() {
             orderDate = findDate(card.textContent, true);
         }
 
-        // Order details link
         const orderDetailsLinkNode = card.querySelector('a[href*="/order-details"], a[href*="order-details"], a[href*="your-orders/order-details"], .yohtmlc-order-details-link a');
         const orderDetailsLink = orderDetailsLinkNode ? toAbsoluteUrl(orderDetailsLinkNode.getAttribute('href')) : null;
 
@@ -127,15 +140,13 @@ function parseAmazonOrders() {
         }
 
         deliveryBoxes.forEach((box, boxIndex) => {
-            const estimationNode = box.querySelector('.delivery-box__primary-text, .yohtmlc-shipment-status-primaryText, .delivery-box .a-size-medium, .js-shipment-status, .delivery-status-message, .shipment-status-title') ||
-                                   card.querySelector('.delivery-box__primary-text, .yohtmlc-shipment-status-primaryText, .delivery-box .a-size-medium, .js-shipment-status, .delivery-status-message');
-            const trackingLinkNode = box.querySelector('a[href*="ship-track"], a[href*="progress-tracker"], a[href*="tracking"]') ||
-                                     card.querySelector('a[href*="ship-track"], a[href*="progress-tracker"], a[href*="tracking"]');
+            // FIX: Restrict status node search to `box` only to prevent cross-package status leaks
+            const estimationNode = box.querySelector('.delivery-box__primary-text, .yohtmlc-shipment-status-primaryText, .delivery-box .a-size-medium, .js-shipment-status, .delivery-status-message, .shipment-status-title');
+            const trackingLinkNode = box.querySelector('a[href*="ship-track"], a[href*="progress-tracker"], a[href*="tracking"]');
 
             const trackingLink = trackingLinkNode ? toAbsoluteUrl(trackingLinkNode.getAttribute('href')) : null;
-            const arrivingEstimation = estimationNode ? (estimationNode.textContent || '').replace(/\s+/g, ' ').trim() : null;
+            const arrivingEstimation = estimationNode ? normalizeText(estimationNode.textContent) : null;
 
-            // Package ID extraction: prioritize itemId, shipmentId, packageId, trackingId from tracking link
             let packageId = null;
             if (trackingLink) {
                 try {
@@ -167,27 +178,23 @@ function parseAmazonOrders() {
             const packageItems = [];
 
             // --- 3. PRODUCT / ITEM LEVEL DATA ---
-            // A shipment can mix standard, carousel, and flex cards. Collect every
-            // layout rather than choosing one and silently dropping the others.
             const itemSelector = '.yo-enhanced-card, .yo-enhanced-flex-card, .item-box, .yo-enhanced-items, .yohtmlc-item';
             const itemCandidates = Array.from(box.querySelectorAll(itemSelector));
             const itemElements = itemCandidates.length > 0
-                // Keep leaf item containers only when Amazon nests one supported
-                // container inside another; this avoids emitting the same product twice.
                 ? itemCandidates.filter(candidate => !candidate.querySelector(itemSelector))
                 : [box];
 
             itemElements.forEach(item => {
                 const nameNode = item.querySelector('.yohtmlc-product-title a, .yo-enhanced-title a, a[href*="/dp/"], a[href*="/gp/product/"]');
-                const imgNode = item.querySelector('img[data-a-hires], img.yo-critical-feature, img');
+                const imgNode = item.querySelector('img[data-a-hires], img[data-a-dynamic-image], img.yo-critical-feature, img');
                 const qtyNode = item.querySelector('.item-view-qty, .yohtmlc-item-quantity, .yohtmlc-item-count');
 
                 let name = '';
                 if (nameNode) {
-                    name = (nameNode.textContent || '').replace(/\s+/g, ' ').trim();
+                    name = normalizeText(nameNode.textContent);
                 }
                 if (!name && imgNode) {
-                    name = (imgNode.getAttribute('alt') || '').replace(/\s+/g, ' ').trim();
+                    name = normalizeText(imgNode.getAttribute('alt'));
                 }
 
                 if (nameNode || imgNode) {
@@ -198,21 +205,25 @@ function parseAmazonOrders() {
                             quantity = parsedQty;
                         }
                     } else if (item.textContent) {
-                        const textMatch = item.textContent.replace(/\s+/g, ' ').match(/(?:Qty|Quantity):\s*(\d+)/i);
-                        if (textMatch && textMatch[1]) {
-                            const parsedQty = parseInt(textMatch[1], 10);
+                        // FIX: Expanded quantity regex to handle "Qty 2", "Quantity: 2", and "2 of"
+                        const textMatch = item.textContent.replace(/\s+/g, ' ').match(/(?:Qty|Quantity)[\s:]*(\d+)|\b(\d+)\s+of\b/i);
+                        const matchedVal = textMatch ? (textMatch[1] || textMatch[2]) : null;
+                        if (matchedVal) {
+                            const parsedQty = parseInt(matchedVal, 10);
                             if (!isNaN(parsedQty) && parsedQty > 0) {
                                 quantity = parsedQty;
                             }
                         }
                     }
 
-                    const imageLink = imgNode ? (imgNode.getAttribute('data-a-hires') || imgNode.getAttribute('src')) : null;
-                    const productLink = nameNode ? toAbsoluteUrl(nameNode.getAttribute('href')) : (imgNode && imgNode.closest('a') ? toAbsoluteUrl(imgNode.closest('a').getAttribute('href')) : null);
+                    const rawImgUrl = getBestImageUrl(imgNode);
+                    const productLink = nameNode 
+                        ? toAbsoluteUrl(nameNode.getAttribute('href')) 
+                        : (imgNode && imgNode.closest('a') ? toAbsoluteUrl(imgNode.closest('a').getAttribute('href')) : null);
 
                     packageItems.push({
                         name: name,
-                        image: imageLink ? toAbsoluteUrl(imageLink) : null,
+                        image: rawImgUrl ? toAbsoluteUrl(rawImgUrl) : null,
                         quantity: quantity,
                         productLink: productLink
                     });
