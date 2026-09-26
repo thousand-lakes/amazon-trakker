@@ -3,7 +3,7 @@ function handleAmazonNewOrders(e) {
   let logSheet = null;
 
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById("1EnJB26zuZjXNrHnZQwcB01yacs5_0gohzsPfuaQPGJA");
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
     
     logSheet = ss.getSheetByName("Execution Logs");
     if (!logSheet) {

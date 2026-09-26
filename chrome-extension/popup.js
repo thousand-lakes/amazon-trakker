@@ -86,6 +86,23 @@ function loadRunnerState() {
   });
 }
 
+function monitorStopCompletion() {
+  chrome.runtime.sendMessage({ action: 'get-runner-state' }, response => {
+    if (chrome.runtime.lastError || !response) return;
+
+    if (response.stopping) {
+      setTimeout(monitorStopCompletion, 200);
+      return;
+    }
+
+    stopLabel.textContent = 'Stop';
+    stopButton.disabled = !response.running;
+    showStatus(response.running
+      ? 'Stopped. A newly queued workflow is now running.'
+      : 'Stopped.');
+  });
+}
+
 function renderCustomWorkflowActions(value) {
   const saved = Array.isArray(value) ? value : [];
   customWorkflows = CUSTOM_WORKFLOW_DEFAULTS.map(defaultWorkflow => ({
@@ -204,7 +221,11 @@ stopButton.addEventListener('click', () => {
     }
 
     stopLabel.textContent = 'Stopping…';
-    showStatus('The current page will finish; no next page will open.');
+    const queuedMessage = response.discarded > 0
+      ? ` Cleared ${response.discarded} queued workflow${response.discarded === 1 ? '' : 's'}.`
+      : '';
+    showStatus(`Cancelling the current page and all queued work.${queuedMessage}`);
+    monitorStopCompletion();
   });
 });
 

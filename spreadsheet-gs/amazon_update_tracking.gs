@@ -3,7 +3,8 @@ function handleAmazonUpdateTracking(e) {
   let ss = null;
 
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet() || SpreadsheetApp.openById("1EnJB26zuZjXNrHnZQwcB01yacs5_0gohzsPfuaQPGJA");
+    // Get active spreadsheet container
+    ss = SpreadsheetApp.getActiveSpreadsheet();
 
     if (!e || !e.postData || !e.postData.contents) {
       logIncident(ss, startTime, "update_tracking", "Error: Body empty");
@@ -49,19 +50,15 @@ function handleAmazonUpdateTracking(e) {
     const lastUpdateStr = Utilities.formatDate(now, tz, "MM/dd/yy hh:mm a");
     const historyTimestamp = Utilities.formatDate(now, tz, "MM/dd/yy HH:mm");
 
-    const cleanStr = (str) => {
-      if (str === null || str === undefined) return "";
-      return String(str)
-        .replace(/[\r\n\t]+/g, " ")
-        .replace(/"/g, '""')
-        .trim();
-    };
-
     let totalUpdatedRows = 0;
 
     itemsList.forEach(item => {
       const pageUrl = String(item["page url"] || "").trim();
-      const content = item["page content"] || {};
+      
+      let content = item["page content"] || {};
+      if (typeof content === "string") {
+        try { content = JSON.parse(content); } catch (err) { content = {}; }
+      }
 
       if (!pageUrl) return;
 
@@ -69,42 +66,61 @@ function handleAmazonUpdateTracking(e) {
       const packageStatus = String(content.packageStatus || "").trim();
       const trackingId = String(content.trackingId || "").trim();
 
-      let newStatus = "";
-      if (orderStatus !== "") {
-        newStatus = orderStatus;
-      } else if (trackingId === "") {
-        newStatus = "Ordered";
-      } else {
-        newStatus = "Shipped";
-      }
-
-      const linkPlaceholder = trackingId !== "" ? trackingId : "tracking page";
-      const newTrackingFormula = `=HYPERLINK("${cleanStr(pageUrl)}", "${cleanStr(linkPlaceholder)}")`;
-
-      // Exact match against Column F
+      // Search matching row in Column F
       colFValues.forEach((fRow, idx) => {
         const existingUrl = String(fRow[0] || "").trim();
 
         if (existingUrl === pageUrl) {
           const rowIndex = idx + 2; // Offset for 1-based index + header row
 
-          // 1. Est. delivery date (Col D)
-          sheet.getRange(rowIndex, 4).setValue(packageStatus);
+          // 1. Est. delivery date (Col D): Keep existing if empty in payload
+          if (packageStatus !== "") {
+            sheet.getRange(rowIndex, 4).setValue(packageStatus);
+          }
 
           // 2. Status (Col J)
-          sheet.getRange(rowIndex, 10).setValue(newStatus);
+          const statusCell = sheet.getRange(rowIndex, 10);
+          const currentStatus = String(statusCell.getValue() || "").trim();
+
+          let newStatus = "";
+          if (orderStatus !== "") {
+            newStatus = orderStatus;
+          } else if (trackingId !== "") {
+            newStatus = "Shipped";
+          } else if (currentStatus === "") {
+            newStatus = "Ordered";
+          }
+
+          if (newStatus !== "") {
+            statusCell.setValue(newStatus);
+          }
 
           // 3. Last update (Col K)
           sheet.getRange(rowIndex, 11).setValue(lastUpdateStr);
 
-          // 4. Tracking no formula (Col L) & Attn Required (Col M)
-          const trackingCell = sheet.getRange(rowIndex, 12);
-          const oldFormulaOrValue = String(trackingCell.getFormula() || trackingCell.getValue() || "").trim();
+          // 4. Tracking Link (Col L) & Attn Required Checkbox (Col M)
+          if (trackingId !== "") {
+            const trackingCell = sheet.getRange(rowIndex, 12);
+            
+            // 1. Remember existing visible label before clearing cell
+            const oldLabel = String(trackingCell.getValue() || "").trim();
 
-          trackingCell.setValue(newTrackingFormula);
+            // 2. Prepare RichText object with tracking URL
+            const richText = SpreadsheetApp.newRichTextValue()
+              .setText(trackingId)
+              .setLinkUrl(pageUrl)
+              .build();
 
-          if (oldFormulaOrValue !== "" && oldFormulaOrValue !== newTrackingFormula) {
-            sheet.getRange(rowIndex, 13).setValue(true); // Enable checkbox
+            // 3. Clear existing formula or value to ensure reliable overwrite
+            trackingCell.clearContent();
+
+            // 4. Set rich text value containing tracking link
+            trackingCell.setRichTextValue(richText);
+
+            // 5. Set Col M checkbox to true if tracking ID is new or changed
+            if (oldLabel !== trackingId) {
+              sheet.getRange(rowIndex, 13).setValue(true);
+            }
           }
 
           // 5. History (Col P)
@@ -130,5 +146,20 @@ function handleAmazonUpdateTracking(e) {
     logIncident(ss, startTime, "update_tracking", `Exception: ${err.toString()}`);
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function logIncident(ss, startTime, action, details) {
+  try {
+    if (!ss) return;
+    let logSheet = ss.getSheetByName("Incidents");
+    if (!logSheet) {
+      logSheet = ss.insertSheet("Incidents");
+      logSheet.appendRow(["Timestamp", "Duration (ms)", "Action", "Details"]);
+    }
+    const duration = new Date() - startTime;
+    logSheet.appendRow([new Date(), duration, action, details]);
+  } catch (e) {
+    // Silent catch
   }
 }

@@ -13,7 +13,7 @@ Perfect for archiving pages, feeding content into automated workflows, syncing w
 - **⚡ Multiple Trigger Options**:
   - Global Keyboard Shortcuts: assign hotkeys for General, Amazon, and all three additional workflows in **Settings → Keyboard Shortcuts**. General defaults to `Ctrl+Shift+S` (Windows/Linux) or `Cmd+Shift+S` (macOS).
   - Browser Toolbar: Click the extension icon and choose Amazon Orders, General, or any enabled additional workflow.
-- **⏹️ Graceful Stop**: Stop an active sequence from the toolbar popup or with `Ctrl+Shift+X` (`Cmd+Shift+X` on macOS). The open page still waits, sends to its webhook, and closes before the sequence ends.
+- **⏹️ Immediate Stop**: Stop all work from the toolbar popup or with `Ctrl+Shift+X` (`Cmd+Shift+X` on macOS). The current wait or webhook request is cancelled, the workflow tab is closed, and every queued workflow is discarded.
 - **🔢 Amazon Sequence Widget**: Active Amazon sequence tabs show a compact countdown and current/total page position while they are being processed.
 - **📦 Amazon Orders Launcher**: Enter a page count and process that many Amazon order-history pages in descending order, ending at page `0`, without requesting a URL list from the links-source webhook.
 - **🔀 Three Additional Workflows**: Configure independent get-pages and send-results webhooks, popup names/colors, enable switches, and daily/weekly schedule rules.
@@ -83,4 +83,3 @@ To install the extension manually in **Developer Mode**:
 ## 📄 License
 
 This project is licensed under the MIT License.
-

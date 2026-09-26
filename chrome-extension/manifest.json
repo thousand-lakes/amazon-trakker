@@ -49,7 +49,7 @@
         "default": "Ctrl+Shift+X",
         "mac": "Command+Shift+X"
       },
-      "description": "Stop the active workflow after its current page"
+      "description": "Stop the active workflow and clear queued workflows"
     },
     "run-custom-workflow-1": {
       "description": "Run additional workflow 1"

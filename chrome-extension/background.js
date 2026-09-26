@@ -40,10 +40,12 @@ const ICON_PATHS = {
 };
 let isSending = false;
 let stopRequested = false;
+let activeRunAbortController = null;
 let animationInterval = null;
 let queueSequence = 0;
 let queueDrainTimer = null;
 let queueDispatching = false;
+let queueCancellationGeneration = 0;
 let queuePersistencePromise = Promise.resolve();
 let ignoreAlarmsScheduledBefore = 0;
 const pendingRuns = [];
@@ -526,12 +528,17 @@ function scheduleQueueDrain() {
 async function drainWorkflowQueue() {
   if (isSending || queueDispatching || pendingRuns.length === 0) return;
   queueDispatching = true;
+  const cancellationGeneration = queueCancellationGeneration;
   const job = pendingRuns.shift();
   try {
     try {
       await persistPendingRuns();
     } catch (error) {
       console.error('Could not update the session queue before starting a run:', error);
+    }
+    if (cancellationGeneration !== queueCancellationGeneration) {
+      console.log('Discarded a workflow that was being removed from the queue when Stop was requested.');
+      return;
     }
     if (job.type === 'amazon') {
       sendTabs({ amazonPageCount: job.pageCount, scheduled: job.scheduled });
@@ -618,13 +625,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message) return;
 
   if (message.action === 'get-runner-state') {
-    sendResponse({ running: isSending, stopping: isSending && stopRequested });
+    sendResponse({
+      running: isSending || pendingRuns.length > 0,
+      stopping: isSending && stopRequested,
+      queued: pendingRuns.length
+    });
     return;
   }
 
   if (message.action === 'stop-active-workflow') {
-    const accepted = requestWorkflowStop();
-    sendResponse({ accepted, running: isSending, stopping: isSending && stopRequested });
+    const result = requestWorkflowStop();
+    sendResponse({
+      ...result,
+      running: isSending || pendingRuns.length > 0,
+      stopping: isSending && stopRequested,
+      queued: pendingRuns.length
+    });
     return;
   }
 
@@ -660,14 +676,77 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 function requestWorkflowStop() {
-  if (!isSending) {
-    console.log('Stop requested, but no workflow is currently running.');
-    return false;
+  const hadQueuedWork = pendingRuns.length > 0 || queueDispatching || queueDrainTimer !== null;
+  if (!isSending && !hadQueuedWork) {
+    console.log('Stop requested, but no workflow is running or queued.');
+    return { accepted: false, discarded: 0 };
   }
 
-  stopRequested = true;
-  console.log('Stop requested. The current page will finish, and no next page will be opened.');
-  return true;
+  queueCancellationGeneration += 1;
+  if (queueDrainTimer !== null) {
+    clearTimeout(queueDrainTimer);
+    queueDrainTimer = null;
+  }
+  const discarded = pendingRuns.length + (queueDispatching ? 1 : 0);
+  pendingRuns.length = 0;
+  persistPendingRuns().catch(error => {
+    console.error('Could not persist the cleared workflow queue:', error);
+  });
+
+  if (isSending) {
+    stopRequested = true;
+    activeRunAbortController?.abort();
+  }
+  console.log(`Stop requested. Cancelling the active workflow and discarding ${discarded} queued workflow(s).`);
+  return { accepted: true, discarded };
+}
+
+function isAbortError(error) {
+  return error && error.name === 'AbortError';
+}
+
+function throwIfWorkflowStopped(signal) {
+  if (stopRequested || signal?.aborted) {
+    throw new DOMException('Workflow stopped by the user.', 'AbortError');
+  }
+}
+
+function waitForDelay(delayMs, signal) {
+  if (!delayMs) {
+    throwIfWorkflowStopped(signal);
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      reject(new DOMException('Workflow stopped by the user.', 'AbortError'));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
+  });
+}
+
+function waitForOperation(operation, signal) {
+  throwIfWorkflowStopped(signal);
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new DOMException('Workflow stopped by the user.', 'AbortError'));
+    signal?.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(operation).then(
+      value => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      error => {
+        signal?.removeEventListener('abort', onAbort);
+        reject(error);
+      }
+    );
+  });
 }
 
 async function sendTabs(options = {}) {
@@ -681,6 +760,9 @@ async function sendTabs(options = {}) {
   // start overlapping tab sequences.
   isSending = true;
   stopRequested = false;
+  const abortController = new AbortController();
+  activeRunAbortController = abortController;
+  const { signal } = abortController;
   let settings;
   try {
     settings = await chrome.storage.local.get({
@@ -695,7 +777,9 @@ async function sendTabs(options = {}) {
       customWorkflows: CUSTOM_WORKFLOW_DEFAULTS
     });
   } catch (error) {
+    if (activeRunAbortController === abortController) activeRunAbortController = null;
     isSending = false;
+    stopRequested = false;
     console.error('Could not load extension settings:', error);
     scheduleQueueDrain();
     return;
@@ -707,14 +791,18 @@ async function sendTabs(options = {}) {
     : null;
   if (options.customWorkflowId && (!customWorkflow || !customWorkflow.enabled)) {
     console.error(`Custom workflow is unavailable: ${options.customWorkflowId}`);
+    if (activeRunAbortController === abortController) activeRunAbortController = null;
     isSending = false;
+    stopRequested = false;
     if (!options.scheduled) chrome.runtime.openOptionsPage();
     scheduleQueueDrain();
     return;
   }
   if (customWorkflow && !customWorkflow.sourceWebhook) {
     console.error(`${customWorkflow.name} source webhook URL is not configured.`);
+    if (activeRunAbortController === abortController) activeRunAbortController = null;
     isSending = false;
+    stopRequested = false;
     if (!options.scheduled) chrome.runtime.openOptionsPage();
     scheduleQueueDrain();
     return;
@@ -729,7 +817,9 @@ async function sendTabs(options = {}) {
 
   if (!webhookUrl) {
     console.error(`${workflowName} destination webhook URL is not configured.`);
+    if (activeRunAbortController === abortController) activeRunAbortController = null;
     isSending = false;
+    stopRequested = false;
     if (!options.scheduled) chrome.runtime.openOptionsPage();
     scheduleQueueDrain();
     return;
@@ -741,16 +831,16 @@ async function sendTabs(options = {}) {
     if (isAmazonRun) {
       const links = buildAmazonOrdersLinks(options.amazonPageCount);
       console.log(`Generated ${links.length} Amazon order page link(s).`);
-      await processLinksSequentially(links, settings, webhookUrl);
+      await processLinksSequentially(links, settings, webhookUrl, signal);
       console.log('Finished sending Amazon order pages sequentially.');
       return;
     }
 
     if (customWorkflow) {
-      const links = await fetchLinksFromSource(customWorkflow.sourceWebhook, normalizeLinkLimit(customWorkflow.maxLinks));
+      const links = await fetchLinksFromSource(customWorkflow.sourceWebhook, normalizeLinkLimit(customWorkflow.maxLinks), signal);
       console.log(`${customWorkflow.name}: found ${links.length} link(s) to process.`);
       if (links.length > 0) {
-        await processLinksSequentially(links, settings, webhookUrl);
+        await processLinksSequentially(links, settings, webhookUrl, signal);
       }
       console.log(`Finished ${customWorkflow.name}.`);
       return;
@@ -758,12 +848,12 @@ async function sendTabs(options = {}) {
 
     // Pre-fetch links if enabled
     if (settings.enableFetch && settings.fetchUrl) {
-      const links = await fetchLinksFromSource(settings.fetchUrl, normalizeLinkLimit(settings.generalMaxLinks));
+      const links = await fetchLinksFromSource(settings.fetchUrl, normalizeLinkLimit(settings.generalMaxLinks), signal);
 
       console.log(`Found ${links.length} link(s) to process.`);
 
       if (links.length > 0) {
-        await processLinksSequentially(links, settings, webhookUrl);
+        await processLinksSequentially(links, settings, webhookUrl, signal);
 
         console.log("Finished sending pre-fetched tabs sequentially.");
         return;
@@ -784,17 +874,22 @@ async function sendTabs(options = {}) {
       }
 
       try {
-        await processAndSendTab(tab.id, tab.url, webhookUrl);
+        await processAndSendTab(tab.id, tab.url, webhookUrl, signal);
       } catch (error) {
-        console.error(`Error processing tab: ${tab.url}`, error);
+        if (!isAbortError(error)) console.error(`Error processing tab: ${tab.url}`, error);
       }
     }
 
     console.log("Finished sending tabs.");
   } catch (err) {
-    console.error("Error in sendTabs:", err);
+    if (isAbortError(err)) {
+      console.log('Workflow stopped by the user.');
+    } else {
+      console.error("Error in sendTabs:", err);
+    }
   } finally {
     await stopAnimation();
+    if (activeRunAbortController === abortController) activeRunAbortController = null;
     isSending = false;
     stopRequested = false;
     scheduleQueueDrain();
@@ -809,7 +904,7 @@ function buildAmazonOrdersLinks(pageCount) {
   return links;
 }
 
-async function processLinksSequentially(links, settings, webhookUrl) {
+async function processLinksSequentially(links, settings, webhookUrl, signal) {
   for (let index = 0; index < links.length; index += 1) {
     const url = links[index];
     if (stopRequested) {
@@ -822,8 +917,9 @@ async function processLinksSequentially(links, settings, webhookUrl) {
       console.log(`Opening sequential tab for: ${url}`);
       const tab = await chrome.tabs.create({ url, active: true });
       tabId = tab.id;
+      throwIfWorkflowStopped(signal);
 
-      await waitForTabsToLoad([tabId]);
+      await waitForTabsToLoad([tabId], 30000, signal);
 
       const minSeconds = Math.max(0, Number(settings.minOpenTime) || 0);
       const maxSeconds = Math.max(minSeconds, Number(settings.maxOpenTime) || 0);
@@ -832,24 +928,22 @@ async function processLinksSequentially(links, settings, webhookUrl) {
       const randomMs = minMs + Math.random() * (maxMs - minMs);
       console.log(`Keeping page open for ${randomMs.toFixed(0)}ms (range: ${minMs}ms - ${maxMs}ms)`);
       if (isAmazonDomain(url)) {
-        await showAmazonSequenceWidget(tabId, index + 1, links.length, randomMs);
+        throwIfWorkflowStopped(signal);
+        await waitForOperation(showAmazonSequenceWidget(tabId, index + 1, links.length, randomMs), signal);
       }
-      await new Promise(resolve => setTimeout(resolve, randomMs));
+      await waitForDelay(randomMs, signal);
 
-      await processAndSendTab(tabId, url, webhookUrl);
-      await removeAmazonSequenceWidget(tabId);
-
-      if (settings.closeTabs || stopRequested) {
-        console.log(`Closing tab: ${tabId}`);
-        await chrome.tabs.remove(tabId);
-      }
+      await processAndSendTab(tabId, url, webhookUrl, signal);
     } catch (err) {
-      console.error(`Error processing URL sequentially: ${url}`, err);
-      if (tabId) await removeAmazonSequenceWidget(tabId);
+      if (!isAbortError(err)) console.error(`Error processing URL sequentially: ${url}`, err);
+    } finally {
       if (tabId && (settings.closeTabs || stopRequested)) {
         try {
+          console.log(`Closing tab: ${tabId}`);
           await chrome.tabs.remove(tabId);
         } catch (_) { }
+      } else if (tabId) {
+        await removeAmazonSequenceWidget(tabId);
       }
     }
 
@@ -946,7 +1040,7 @@ async function removeAmazonSequenceWidget(tabId) {
   } catch (_) { }
 }
 
-async function fetchLinksFromSource(sourceUrl, maxLinks) {
+async function fetchLinksFromSource(sourceUrl, maxLinks, signal) {
   let finalFetchUrl = sourceUrl;
   if (maxLinks > 0) {
     try {
@@ -960,7 +1054,7 @@ async function fetchLinksFromSource(sourceUrl, maxLinks) {
   }
 
   console.log(`Fetching links from: ${finalFetchUrl}`);
-  const response = await fetch(finalFetchUrl);
+  const response = await fetch(finalFetchUrl, { signal });
   if (!response.ok) {
     throw new Error(`Failed to fetch links. Status: ${response.status} ${response.statusText}`);
   }
@@ -1023,7 +1117,8 @@ function extractLinksFromResponse(responseText) {
   return [];
 }
 
-async function processAndSendTab(tabId, url, webhookUrl) {
+async function processAndSendTab(tabId, url, webhookUrl, signal) {
+  throwIfWorkflowStopped(signal);
   // Amazon may redirect the saved legacy ship-track URL to the newer
   // progress-tracker route. Classify using either URL while retaining the
   // original URL in the webhook payload so it still matches the sheet row.
@@ -1035,10 +1130,12 @@ async function processAndSendTab(tabId, url, webhookUrl) {
 
   if (isAmazonTrackingPage(url) || isAmazonTrackingPage(loadedUrl)) {
     console.log(`Detected Amazon tracking page: ${url}. Parsing tracking details...`);
-    const [result] = await chrome.scripting.executeScript({
+    throwIfWorkflowStopped(signal);
+    const [result] = await waitForOperation(chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: parseAmazonTrackingPage
-    });
+    }), signal);
+    throwIfWorkflowStopped(signal);
 
     const trackingData = (result && result.result) || {};
     console.log(`Parsed Amazon tracking data from tab ${tabId}:`, trackingData);
@@ -1054,6 +1151,7 @@ async function processAndSendTab(tabId, url, webhookUrl) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
+      signal,
     });
 
     if (response.ok) {
@@ -1070,10 +1168,12 @@ async function processAndSendTab(tabId, url, webhookUrl) {
   // URL so either route receives the structured order parser.
   if (isAmazonOrdersPage(url) || isAmazonOrdersPage(loadedUrl)) {
     console.log(`Detected Amazon orders page: ${loadedUrl}. Parsing structured orders...`);
-    const [result] = await chrome.scripting.executeScript({
+    throwIfWorkflowStopped(signal);
+    const [result] = await waitForOperation(chrome.scripting.executeScript({
       target: { tabId: tabId },
       func: parseAmazonOrders
-    });
+    }), signal);
+    throwIfWorkflowStopped(signal);
 
     const ordersData = (result && result.result) || [];
     console.log(`Parsed ${ordersData.length} Amazon order(s) from tab ${tabId}.`);
@@ -1090,6 +1190,7 @@ async function processAndSendTab(tabId, url, webhookUrl) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
+      signal,
     });
 
     if (response.ok) {
@@ -1100,7 +1201,8 @@ async function processAndSendTab(tabId, url, webhookUrl) {
     return;
   }
 
-  const [result] = await chrome.scripting.executeScript({
+  throwIfWorkflowStopped(signal);
+  const [result] = await waitForOperation(chrome.scripting.executeScript({
     target: { tabId: tabId },
     func: () => {
       if (!document.documentElement) {
@@ -1143,7 +1245,8 @@ async function processAndSendTab(tabId, url, webhookUrl) {
       }
       return { chunks, length: html.length, removedRakutenNodes: rakutenNodes.size };
     },
-  });
+  }), signal);
+  throwIfWorkflowStopped(signal);
 
   const extraction = result && result.result;
   if (!extraction || !Array.isArray(extraction.chunks)) {
@@ -1170,6 +1273,7 @@ async function processAndSendTab(tabId, url, webhookUrl) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(data),
+    signal,
   });
 
   if (response.ok) {
@@ -1179,18 +1283,26 @@ async function processAndSendTab(tabId, url, webhookUrl) {
   }
 }
 
-function waitForTabsToLoad(tabIds, timeoutMs = 30000) {
+function waitForTabsToLoad(tabIds, timeoutMs = 30000, signal) {
   if (tabIds.length === 0) return Promise.resolve();
 
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const pendingTabIds = new Set(tabIds);
     let timeoutId;
 
     const cleanUp = () => {
       chrome.tabs.onUpdated.removeListener(onUpdatedListener);
       chrome.tabs.onRemoved.removeListener(onRemovedListener);
+      signal?.removeEventListener('abort', onAbort);
       clearTimeout(timeoutId);
       resolve();
+    };
+
+    const onAbort = () => {
+      chrome.tabs.onUpdated.removeListener(onUpdatedListener);
+      chrome.tabs.onRemoved.removeListener(onRemovedListener);
+      clearTimeout(timeoutId);
+      reject(new DOMException('Workflow stopped by the user.', 'AbortError'));
     };
 
     const onUpdatedListener = (tabId, changeInfo) => {
@@ -1213,6 +1325,11 @@ function waitForTabsToLoad(tabIds, timeoutMs = 30000) {
 
     chrome.tabs.onUpdated.addListener(onUpdatedListener);
     chrome.tabs.onRemoved.addListener(onRemovedListener);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
 
     // Initial check: check if tabs are already loaded
     for (const tabId of tabIds) {
