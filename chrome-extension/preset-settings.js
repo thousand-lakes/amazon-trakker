@@ -6,7 +6,7 @@ globalThis.AMAZON_TRACKER_PRESET_SETTINGS = {
   amazonButtonColor: '#f59e0b',
   amazonButtonLabel: 'Get new orders',
   amazonPageCount: 2,
-  amazonScheduleEnabled: true,
+  amazonScheduleEnabled: false,
   amazonScheduleRuleCount: 4,
   amazonScheduleRules: [
     { days: [1, 2, 3, 4, 5, 6, 0], time: '09:00' },
@@ -17,7 +17,7 @@ globalThis.AMAZON_TRACKER_PRESET_SETTINGS = {
     { days: [1, 2, 3, 4, 5, 6, 0], time: '23:00' }
   ],
   amazonWebhook: 'https://script.google.com/macros/s/AKfycbxcVCOI9Ay8-PfqHMCkJjO2mxbCugVeV3v6CEYjEqb7b1tojt2oCsI6Uuu6H4a7NGNb/exec?action=amazon_orders',
-  autoLaunchEnabled: true,
+  autoLaunchEnabled: false,
   autoLaunchInterval: 60,
   closeTabs: true,
   customWorkflows: [
@@ -28,7 +28,7 @@ globalThis.AMAZON_TRACKER_PRESET_SETTINGS = {
       id: 'custom-1',
       maxLinks: 600,
       name: 'Get Shipped updates',
-      scheduleEnabled: true,
+      scheduleEnabled: false,
       scheduleRuleCount: 2,
       scheduleRules: [
         { days: [6, 0], time: '09:00' },
