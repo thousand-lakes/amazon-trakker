@@ -109,7 +109,7 @@ function handleAmazonUpdateTracking(e) {
             }
           });
 
-          // Match sheet rows and insert newly retrieved trackingLink into Column F
+          // Match sheet rows and process updates
           data.forEach((row, idx) => {
             const existingOrderNum = String(row[1] || "").trim();    // Column B
             const existingTrackingUrl = String(row[5] || "").trim(); // Column F
@@ -120,11 +120,11 @@ function handleAmazonUpdateTracking(e) {
             const isOrderMatch = existingOrderNum === orderId;
             const hasQuota = existingAsin && (pkgAsinQuota[existingAsin]?.qty || 0) > 0;
 
-            if (isOrderMatch && hasQuota && trackingLink !== "") {
+            if (isOrderMatch && hasQuota) {
               const rowIndex = idx + 2;
 
-              // Only update if the tracking link actually changed
-              if (existingTrackingUrl !== trackingLink) {
+              // 1. Update tracking link ONLY if present and changed
+              if (trackingLink !== "" && existingTrackingUrl !== trackingLink) {
                 sheet.getRange(rowIndex, 6).setValue(trackingLink);
 
                 const historyCell = sheet.getRange(rowIndex, 16);
@@ -135,7 +135,18 @@ function handleAmazonUpdateTracking(e) {
                 totalUpdatedRows++;
               }
 
-              // Deduct quota
+              // 2. Update delivery details / Cancelled status if provided
+              if (estDeliveryDate !== "") {
+                sheet.getRange(rowIndex, 4).setValue(estDeliveryDate);
+                
+                if (estDeliveryDate.toLowerCase().includes("cancelled") || estDeliveryDate.toLowerCase().includes("canceled")) {
+                  sheet.getRange(rowIndex, 10).setValue("Canceled");
+                }
+                
+                sheet.getRange(rowIndex, 11).setValue(lastUpdateStr);
+              }
+
+              // ALWAYS deduct quota for matched rows, even if trackingLink is empty/null!
               pkgAsinQuota[existingAsin].qty -= rowQty;
             }
           });
@@ -373,58 +384,5 @@ function handleAmazonUpdateTracking(e) {
     logIncident(ss, startTime, "update_tracking", `Exception: ${err.toString()}`);
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-/**
- * Helper to extract raw URL from `=HYPERLINK("url", "label")` formula, RichText link, or plain text URL.
- */
-function extractUrlFromCell(formulaStr, valStr, richText) {
-  if (formulaStr) {
-    const match = formulaStr.match(/HYPERLINK\(\s*"([^"]+)"/i) || formulaStr.match(/HYPERLINK\(\s*'([^']+)'/i);
-    if (match) return match[1];
-  }
-  if (richText && typeof richText.getLinkUrl === "function" && richText.getLinkUrl()) {
-    return richText.getLinkUrl();
-  }
-  if (valStr && valStr.toLowerCase().startsWith("http")) {
-    return valStr;
-  }
-  return "";
-}
-
-/**
- * Extracts 10-character ASIN/ISBN from clean text, URL, or HYPERLINK formula in a cell.
- */
-function extractAsin(url) {
-  if (!url) return "";
-  const str = String(url).trim();
-  
-  if (/^[A-Z0-9]{10}$/i.test(str)) {
-    return str.toUpperCase();
-  }
-
-  const match = str.match(/(?:dp|product|gp\/product|\/d)\/([A-Z0-9]{10})/i) 
-             || str.match(/\/([A-Z0-9]{10})(?:[\/?#]|$)/i)
-             || str.match(/\b([B0-9][A-Z0-9]{9})\b/i);
-
-  return match ? match[1].toUpperCase() : "";
-}
-
-/**
- * Logs errors and invalid payloads into 'Incidents' tab.
- */
-function logIncident(ss, startTime, action, details) {
-  try {
-    if (!ss) return;
-    let logSheet = ss.getSheetByName("Incidents");
-    if (!logSheet) {
-      logSheet = ss.insertSheet("Incidents");
-      logSheet.appendRow(["Timestamp", "Duration (ms)", "Action", "Details"]);
-    }
-    const duration = new Date() - startTime;
-    logSheet.appendRow([new Date(), duration, action, details]);
-  } catch (e) {
-    // Silent catch for logging errors
   }
 }
