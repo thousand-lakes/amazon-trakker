@@ -1,12 +1,18 @@
-/**
- * Parses Amazon Order pages and extracts order, package, and product details.
- * Call this function from your content script once the DOM is fully rendered.
- */
 function parseAmazonOrders() {
     const ordersData = [];
 
     function normalizeText(value) {
         return (value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function extractTextWithBr(element) {
+        if (!element) return null;
+        // Replace <br> tags with spaces before reading textContent to preserve line breaks
+        const html = element.innerHTML || '';
+        const cleanedHtml = html.replace(/<br\s*\/?>/gi, ' ');
+        const temp = document.createElement('div');
+        temp.innerHTML = cleanedHtml;
+        return normalizeText(temp.textContent);
     }
 
     const orderDateLabelPattern = '(?:Order\\s+placed|Order\\s+date|Placed\\s+on|Ordered\\s+on|Ordered)';
@@ -21,6 +27,12 @@ function parseAmazonOrders() {
         return match ? match[1].trim() : null;
     }
 
+    function extractProductId(url) {
+        if (!url) return null;
+        const match = url.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+        return match ? match[1] : null;
+    }
+
     function toAbsoluteUrl(href) {
         if (!href) return null;
         try {
@@ -30,29 +42,24 @@ function parseAmazonOrders() {
         }
     }
 
-    // Helper to extract highest-res image URL from Amazon img nodes
     function getBestImageUrl(imgNode) {
         if (!imgNode) return null;
-        
-        // 1. Explicit high-res attribute
+
         const hires = imgNode.getAttribute('data-a-hires');
         if (hires) return hires;
 
-        // 2. Parse data-a-dynamic-image JSON if available
         const dynamicImgAttr = imgNode.getAttribute('data-a-dynamic-image');
         if (dynamicImgAttr) {
             try {
                 const parsed = JSON.parse(dynamicImgAttr);
                 const urls = Object.keys(parsed);
                 if (urls.length > 0) {
-                    // Pick the URL with the largest width
                     urls.sort((a, b) => (parsed[b][0] || 0) - (parsed[a][0] || 0));
                     return urls[0];
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
-        // 3. Fallback to src
         return imgNode.getAttribute('src');
     }
 
@@ -71,8 +78,7 @@ function parseAmazonOrders() {
         if (!orderNumber) {
             const orderIdContainer = card.querySelector('.yohtmlc-order-id, .yohtmlc-order-number');
             if (orderIdContainer) {
-                const text = orderIdContainer.textContent || '';
-                const match = text.match(/\b\d{3}-\d{7}-\d{7}\b/);
+                const match = (orderIdContainer.textContent || '').match(/\b\d{3}-\d{7}-\d{7}\b/);
                 if (match) orderNumber = match[0];
             }
         }
@@ -93,27 +99,26 @@ function parseAmazonOrders() {
 
         if (!orderNumber) return;
 
+        // --- Order Date ---
         let orderDate = null;
         const dateContainer = card.querySelector('.yohtmlc-order-date, [data-order-date]');
         if (dateContainer) {
-            const dateAttribute = dateContainer.getAttribute('data-order-date') ||
-                                  dateContainer.getAttribute('datetime');
-            orderDate = findDate(dateAttribute, false) ||
-                        findDate(dateContainer.textContent, false);
+            const dateAttribute = dateContainer.getAttribute('data-order-date') || dateContainer.getAttribute('datetime');
+            orderDate = findDate(dateAttribute, false) || findDate(dateContainer.textContent, false);
         }
 
         if (!orderDate) {
             const orderHeader = card.querySelector('.order-header, .yohtmlc-order-header, [data-component="order-header"]');
             if (orderHeader) {
-                orderDate = findDate(orderHeader.textContent, true) ||
-                            findDate(orderHeader.textContent, false);
+                const dateListItem = Array.from(orderHeader.querySelectorAll('.order-header__header-list-item'))
+                    .find(item => /Order\s+placed/i.test(item.textContent));
+
+                if (dateListItem) {
+                    orderDate = findDate(dateListItem.textContent, false);
+                }
 
                 if (!orderDate) {
-                    const timeNode = orderHeader.querySelector('time[datetime]');
-                    if (timeNode) {
-                        orderDate = findDate(timeNode.getAttribute('datetime'), false) ||
-                                    normalizeText(timeNode.textContent) || null;
-                    }
+                    orderDate = findDate(orderHeader.textContent, true) || findDate(orderHeader.textContent, false);
                 }
             }
         }
@@ -122,12 +127,25 @@ function parseAmazonOrders() {
             orderDate = findDate(card.textContent, true);
         }
 
+        // --- Ship To Address ---
+        let shipTo = null;
+        const recipientPreload = card.querySelector('.yohtmlc-recipient .a-popover-preload, .yohtmlc-recipient [id*="popover-shippingAddress"]');
+        if (recipientPreload) {
+            shipTo = extractTextWithBr(recipientPreload);
+        } else {
+            const recipientContainer = card.querySelector('.yohtmlc-recipient');
+            if (recipientContainer) {
+                shipTo = normalizeText(recipientContainer.textContent);
+            }
+        }
+
         const orderDetailsLinkNode = card.querySelector('a[href*="/order-details"], a[href*="order-details"], a[href*="your-orders/order-details"], .yohtmlc-order-details-link a');
         const orderDetailsLink = orderDetailsLinkNode ? toAbsoluteUrl(orderDetailsLinkNode.getAttribute('href')) : null;
 
         const orderInfo = {
             number: orderNumber,
             date: orderDate,
+            shipTo: shipTo,
             orderDetailsLink: orderDetailsLink,
             packages: []
         };
@@ -140,7 +158,6 @@ function parseAmazonOrders() {
         }
 
         deliveryBoxes.forEach((box, boxIndex) => {
-            // FIX: Restrict status node search to `box` only to prevent cross-package status leaks
             const estimationNode = box.querySelector('.delivery-box__primary-text, .yohtmlc-shipment-status-primaryText, .delivery-box .a-size-medium, .js-shipment-status, .delivery-status-message, .shipment-status-title');
             const trackingLinkNode = box.querySelector('a[href*="ship-track"], a[href*="progress-tracker"], a[href*="tracking"]');
 
@@ -151,12 +168,12 @@ function parseAmazonOrders() {
             if (trackingLink) {
                 try {
                     const parsedUrl = new URL(trackingLink, window.location.origin);
-                    packageId = parsedUrl.searchParams.get('itemId') ||
-                                parsedUrl.searchParams.get('shipmentId') ||
-                                parsedUrl.searchParams.get('packageId') ||
-                                parsedUrl.searchParams.get('trackingId');
+                    packageId = parsedUrl.searchParams.get('shipmentId') ||
+                        parsedUrl.searchParams.get('packageId') ||
+                        parsedUrl.searchParams.get('trackingId') ||
+                        parsedUrl.searchParams.get('itemId');
                 } catch (_) {
-                    const match = trackingLink.match(/(?:itemId|shipmentId|packageId|trackingId)=([^&]+)/i);
+                    const match = trackingLink.match(/(?:shipmentId|packageId|trackingId|itemId)=([^&]+)/i);
                     if (match && match[1]) {
                         packageId = decodeURIComponent(match[1]).trim();
                     }
@@ -165,10 +182,10 @@ function parseAmazonOrders() {
 
             if (!packageId && box !== card) {
                 packageId = box.getAttribute('data-shipment-id') ||
-                            box.getAttribute('data-package-id') ||
-                            box.getAttribute('data-item-id') ||
-                            (box.dataset && (box.dataset.shipmentId || box.dataset.packageId || box.dataset.itemId)) ||
-                            (box.id && !box.id.startsWith('delivery-box-') && box.id.length > 3 ? box.id.trim() : null);
+                    box.getAttribute('data-package-id') ||
+                    box.getAttribute('data-item-id') ||
+                    (box.dataset && (box.dataset.shipmentId || box.dataset.packageId || box.dataset.itemId)) ||
+                    (box.id && !box.id.startsWith('delivery-box-') && box.id.length > 3 ? box.id.trim() : null);
             }
 
             if (!packageId) {
@@ -185,9 +202,14 @@ function parseAmazonOrders() {
                 : [box];
 
             itemElements.forEach(item => {
-                const nameNode = item.querySelector('.yohtmlc-product-title a, .yo-enhanced-title a, a[href*="/dp/"], a[href*="/gp/product/"]');
+                let nameNode = item.querySelector('.yohtmlc-product-title a, .yo-enhanced-title a');
+                if (!nameNode) {
+                    const allLinks = Array.from(item.querySelectorAll('a[href*="/dp/"], a[href*="/gp/product/"]'));
+                    nameNode = allLinks.find(a => !a.querySelector('img') && !a.closest('.product-image')) || allLinks[0];
+                }
+
                 const imgNode = item.querySelector('img[data-a-hires], img[data-a-dynamic-image], img.yo-critical-feature, img');
-                const qtyNode = item.querySelector('.item-view-qty, .yohtmlc-item-quantity, .yohtmlc-item-count');
+                const qtyNode = item.querySelector('.product-image__qty, .item-view-qty, .yohtmlc-item-quantity, .yohtmlc-item-count');
 
                 let name = '';
                 if (nameNode) {
@@ -205,7 +227,6 @@ function parseAmazonOrders() {
                             quantity = parsedQty;
                         }
                     } else if (item.textContent) {
-                        // FIX: Expanded quantity regex to handle "Qty 2", "Quantity: 2", and "2 of"
                         const textMatch = item.textContent.replace(/\s+/g, ' ').match(/(?:Qty|Quantity)[\s:]*(\d+)|\b(\d+)\s+of\b/i);
                         const matchedVal = textMatch ? (textMatch[1] || textMatch[2]) : null;
                         if (matchedVal) {
@@ -217,15 +238,18 @@ function parseAmazonOrders() {
                     }
 
                     const rawImgUrl = getBestImageUrl(imgNode);
-                    const productLink = nameNode 
-                        ? toAbsoluteUrl(nameNode.getAttribute('href')) 
-                        : (imgNode && imgNode.closest('a') ? toAbsoluteUrl(imgNode.closest('a').getAttribute('href')) : null);
+                    const productHref = nameNode
+                        ? nameNode.getAttribute('href')
+                        : (imgNode && imgNode.closest('a') ? imgNode.closest('a').getAttribute('href') : null);
+
+                    const productAbsUrl = productHref ? toAbsoluteUrl(productHref) : null;
 
                     packageItems.push({
                         name: name,
                         image: rawImgUrl ? toAbsoluteUrl(rawImgUrl) : null,
                         quantity: quantity,
-                        productLink: productLink
+                        productLink: productAbsUrl,
+                        productId: extractProductId(productAbsUrl || productHref)
                     });
                 }
             });
@@ -245,8 +269,4 @@ function parseAmazonOrders() {
     });
 
     return ordersData;
-}
-
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { parseAmazonOrders };
 }

@@ -30,8 +30,12 @@ Perfect for archiving pages, feeding content into automated workflows, syncing w
 ```
 chrome-extension/
 ├── manifest.json              # Extension configurations & keyboard shortcuts
-├── background.js              # Background worker handling queues, tab management & webhook sync
+├── background.js              # Service-worker entry point and Chrome event listeners
+├── background-schedules.js    # Initialization, migrations, alarms, and schedule rules
+├── background-workflows.js    # Workflow queue, tab lifecycle, and progress UI
+├── background-page-processing.js # URL routing, parser dispatch, and webhook delivery
 ├── amazon-order-list.js       # Amazon order history DOM parser
+├── amazon-order-page.js       # Amazon individual order-details DOM parser
 ├── amazon-tracking.js         # Amazon package tracking DOM parser
 ├── options.html               # Options page HTML dashboard
 ├── options.css                # Options page styling

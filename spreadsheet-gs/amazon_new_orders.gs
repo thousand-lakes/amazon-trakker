@@ -102,6 +102,7 @@ function handleAmazonNewOrders(e) {
 
       const orderDate = order.date ? order.date : ""; 
       const orderDetailsLink = (order.orderDetailsLink || "").trim();
+      const shipTo = (order.shipTo || "").toString().replace(/[\r\n\t]+/g, " ").trim();
       const packages = order.packages || [];
 
       packages.forEach(pkg => {
@@ -113,6 +114,7 @@ function handleAmazonNewOrders(e) {
         items.forEach(item => {
           const rawName = item.name || "Product";
           const prodLink = (item.productLink || "").trim();
+          const prodId = item.productId || "";
           const imgUrl = (item.image || "").trim();
           const qty = item.quantity || 1;
 
@@ -133,6 +135,11 @@ function handleAmazonNewOrders(e) {
             ? `=HYPERLINK("${cleanStr(trackingLink)}", "tracking page")` 
             : "";
 
+          // Column N: Hyperlink formula displaying Product ID / ASIN as text
+          const prodIdVal = prodLink 
+            ? `=HYPERLINK("${cleanStr(prodLink)}", "${cleanStr(prodId)}")` 
+            : cleanStr(prodId);
+
           const historyVal = `${historyTimestamp} New|${estDelivery}`;
 
           rowsToInsert.push([
@@ -149,9 +156,10 @@ function handleAmazonNewOrders(e) {
             lastUpdateStr,     // K: Last update
             trackingVal,       // L: Tracking link formula
             "",                // M: Attn Required
-            prodLink,          // N: Product link
+            prodIdVal,         // N: Product link formula with Product ID text
             "",                // O: Comments
-            historyVal         // P: History
+            historyVal,        // P: History
+            shipTo             // Q: Ship To
           ]);
         });
       });
